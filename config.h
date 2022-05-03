@@ -16,59 +16,65 @@
 #include <sys/sem.h>
 
 #define MAX_PROC 18
-#define MAX_RESOURCE 20
-#define MAX_INSTANCE 10
-#define MAX_SEM 2
-#define RESOURCE_SEM 0
-#define CLOCK_SEM 1
+#define MAX_FRAMES 32
+#define MAX_FORKS 100
+#define MAX_MEM 256
+#define MAX_SEM 20
+#define PROC_CT_SEM 19
+#define CLOCK_SEM 18
 
-//States the processes can terminate to
-#define ND 0
-#define OSS_KILL 1
-#define EARLY_TERM 2
+//How frames can be interacted with
+#define READ 1
+#define WRITE 2
 
-//Structures for shared memory and resources
+//Structure for frame
 typedef struct {
 
-    int numOfInstances;
-    int numOfInstancesFree;
+    int address;
+    char dirtyBit;
+    int proc_num;
 
-    int request_arr[MAX_PROC];
-    int allocated_arr[MAX_PROC];
-    int release_arr[MAX_PROC];
-
-} resource_struct;
+} frame;
 
 typedef struct {
 
-    unsigned int sec_timer;
-    unsigned int nsec_timer;
+   int address;
+   int frame_num;
 
-    resource_struct allocated_resources[MAX_RESOURCE];
+} page;
 
-    int running_proc_pid[MAX_PROC];
+typedef struct {
 
-    int sleeping_proc_arr[MAX_PROC];
-    int complete[MAX_PROC];
-    bool blocked[MAX_PROC];
-    int needs[MAX_PROC];
+   int waitingFor;
+   int type;
+   bool died;
+   page pageTable[MAX_FRAMES];
+   int page_in;
+   int page_count;
 
-} sh_mem_struct;
+} proc_stats;
 
+typedef struct {
+
+   int running_pids[MAX_PROC];
+
+   proc_stats procs[MAX_PROC];
+   frame frames[MAX_MEM];
+
+   int lookingFor;
+   int nextEnter;
+
+   unsigned int secs;
+   unsigned int nsecs;
+
+} shm_container;
+
+//Function prototypes
 void writeToLog(char *);
 void cleanup();
+void sig_handler();
+int set_shm();
+int set_sem();
 void sem_signal(int);
 void sem_wait(int);
-bool timePassed();
-void fork_process();
-void sig_handler();
-bool checkSysClock();
 int findIndex(int);
-void allocate_resources();
-void completed_process();
-void release_resources();
-void deadlock_detection();
-void stopZombies(int);
-void curResourceAllo();
-void finalReport();
-void alarm_handler();

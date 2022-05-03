@@ -49,7 +49,7 @@ typedef struct {
    int type;
    bool died;
    page pageTable[MAX_FRAMES];
-   int page_in;
+   int page_index;
    int page_count;
 
 } proc_stats;
@@ -62,7 +62,7 @@ typedef struct {
    frame frames[MAX_MEM];
 
    int lookingFor;
-   int nextEnter;
+   int nextEntry;
 
    unsigned int secs;
    unsigned int nsecs;

@@ -10,7 +10,8 @@ int filled_frames = 0;
 int frame_num;
 int mem_acc = 0;
 int page_faults = 0;
-int last_print = 0;
+int prevPrint = 0;
+int log_line_num = 0;
 FILE* logfile_ptr = NULL;
 shm_container* shm_ptr = NULL;
 
@@ -36,7 +37,8 @@ void check_died();
 void printPIDTable();
 void fork_proc();
 void nsecsToSecs();
-bool forkTime();
+void forkClockFix();
+bool timePassed();
 void init_shm();
 void init_sem();
 void child_handler(int);
@@ -62,141 +64,45 @@ int main(int argc, char *argv[])
 
     //printf("Logfile created\n");
 
-    //Initialize semaphores for resource access
-    key_t sem_key = ftok("oss.c", 'a');
-
-    if((sem_id = semget(sem_key, MAX_SEM, IPC_CREAT | 0666)) == -1)
+    //Initialize semaphores
+    if(set_sem() == -1)
     {
-        perror("oss.c: Error with semget, exiting\n");
         cleanup();
     }
 
-    semctl(sem_id, RESOURCE_SEM, SETVAL, 1);
-    semctl(sem_id, CLOCK_SEM, SETVAL, 1);
-
-    writeToLog("Semaphores for resources and clock initialized\n");
     //printf("Semaphores initialized\n");
 
     //Initialize shared memory
-    key_t shmem_key = ftok("process.c", 'a');
-
-    if((shmem_id = shmget(shmem_key, (sizeof(resource_struct) * MAX_PROC) + sizeof(sh_mem_struct), IPC_CREAT | 0666)) == -1)
+    if(set_shm() == -1)
     {
-        perror("oss.c: Error with shmget, exiting\n");
         cleanup();
     }
 
-    //printf("Shared memory gotten, attaching now\n");
+    init_sem();
+    init_shm();
 
-    if((sh_mem_ptr = (sh_mem_struct*)shmat(shmem_id, 0, 0)) == (sh_mem_struct*)-1)
-    {
-        perror("oss.c: Error with shmat, exiting\n");
-        cleanup();
-    }
-
-    int i, j;
-    for (i = 0; i < MAX_RESOURCE; i++)
-    {
-        sh_mem_ptr->allocated_resources[i].numOfInstances = 1 + (rand() % MAX_INSTANCE);
-        sh_mem_ptr->allocated_resources[i].numOfInstancesFree = sh_mem_ptr->allocated_resources[i].numOfInstances;
-        sprintf(stringBuf, "%d instances of R%d have been made\n", sh_mem_ptr->allocated_resources[i].numOfInstances, i);
-        writeToLog(stringBuf);
-
-        for (j = 0; j < MAX_PROC; j++)
-        {
-            sh_mem_ptr->allocated_resources[i].request_arr[j] = 0;
-            sh_mem_ptr->allocated_resources[i].allocated_arr[j] = 0;
-            sh_mem_ptr->allocated_resources[i].release_arr[j] = 0;
-        }
-    }
-
-    //printf("Shared memory initialized\n");
-
-    for (i = 0; i < MAX_PROC; i++)
-    {
-        //Fill out PID table
-        sh_mem_ptr->running_proc_pid[i] = 0;
-    }
-
-    //printf("PID Table filled out\n");
-
-    //Initialize the logical clock
-    sh_mem_ptr->sec_timer = 0;
-    sh_mem_ptr->nsec_timer = 0;
-
+    writeToLog("Semaphores initialized\n");
     writeToLog("Shared memory initialized\n");
 
-    //Print shared resources in their initial state
-
-    //Set alarm for 5 seconds
-    alarm(5);
-    writeToLog("Alarm has been set for 5 real seconds\n");
+    //Set alarm for 2 seconds
+    alarm(2);
+    writeToLog("Alarm has been set for 2 real seconds\n");
 
     writeToLog("Main oss.c loop starting, logical clock begins\n");
     //Begin main loop
     while(1)
     {
-        //Sem wait
-        sem_wait(RESOURCE_SEM);
+        //Print memory allocation every second
 
-        //Fork processes, but make sure not to create more than 18 at a time, 
-        if(numOfProcs == 0)
-        {
-            //fork
-            fork_process();
-        }
-        else if(numOfProcs < MAX_PROC)
-        {
-            //Check if there is room in the process table
-            if(timePassed())
-            {
-                //Enough time has passed for another fork
-                fork_process();
-            }
-        }
+        //Check for processes that died
 
-        //If there are processes in the system
-        if(numOfProcs > 0)
-        {
-            //Check if any processes have finished
-            completed_process();
-            //Release resources if so
-            release_resources();
-            //Allocate resources that are available
-            allocate_resources();
-            deadlock_detection();
-            deadlockdet_run++;
-        }
+        //Fork if enough time has passed and there aren't 18 processes
 
-        // if (sh_mem_ptr->sec_timer - deadlockDetTimer >= 1)
-        // {
-        //     deadlock_detection();
-        //     deadlockdet_run++;
-        //     deadlockDetTimer = sh_mem_ptr->sec_timer;
-        // }
+        //Check how many frames were filled
 
-        //Sem signal
-        sem_signal(RESOURCE_SEM);
+        //Check for waiting processes, and try to complete their request. If the request isnt in the page table, FIFO
 
-        //Update logical clock
-        sem_wait(CLOCK_SEM);
-
-        nano_time_pass = 1 + (rand() % 100000000);
-        sh_mem_ptr->nsec_timer += nano_time_pass;
-        //If too many nanoseconds pass, update seconds
-        if (sh_mem_ptr->nsec_timer >= 1000000000)
-        {
-            sh_mem_ptr->sec_timer += 1;
-            sh_mem_ptr->nsec_timer -= 1000000000;
-        }
-
-        sem_signal(CLOCK_SEM);
-
-        if (sh_mem_ptr->sec_timer - curResTimer >= 1000)
-        {
-            curResourceAllo();
-            curResTimer = sh_mem_ptr->sec_timer;
-        }
+        //Update clock
     }
 
     return 0;
@@ -221,8 +127,8 @@ void writeToLog(char * string)
 void cleanup()
 {
     printf("Cleanup called\n");
-    curResourceAllo();
-    finalReport();
+    
+
     fputs("OSS is terminating, cleaning up shared memory, semaphores, and child processes\n", logfile_ptr);
     //Output resource report here
     if (logfile_ptr != NULL)
@@ -231,44 +137,135 @@ void cleanup()
     }
     system("killall process");
     sleep(5);
-    shmdt(sh_mem_ptr);
-    shmctl(shmem_id, IPC_RMID, NULL);
+    shmdt(shm_ptr);
+    shmctl(shm_id, IPC_RMID, NULL);
     semctl(sem_id, 0, IPC_RMID, NULL);
     exit(0);
 }
 
-void sem_signal(int sem_id)
+int set_sem()
 {
-    //Semaphore signal function
-    struct sembuf sem;
-    sem.sem_num = 0;
-    sem.sem_op = 1;
-    sem.sem_flg = 0;
-    semop(sem_id, &sem, 1);
+    //Initialize semaphores for resource access
+    key_t sem_key = ftok("oss.c", 'a');
+
+    if((sem_id = semget(sem_key, MAX_SEM, IPC_CREAT | 0666)) == -1)
+    {
+        perror("oss.c: Error with semget, exiting\n");
+        return -1;
+    }
+    return 0;
 }
 
-void sem_wait(int sem_id)
+int set_shm()
+{
+    key_t shm_key = ftok("process.c", 'a');
+
+    if((shm_id = shmget(shm_key, (sizeof(frame) * MAX_MEM) + sizeof(shm_container) + (sizeof(proc_stats) * MAX_PROC) + (sizeof(page) * MAX_MEM), IPC_CREAT | 0666)) == -1)
+    {
+        perror("oss.c: Error with shmget, exiting\n");
+        return -1;
+    }
+
+    //printf("Shared memory gotten, attaching now\n");
+
+    if((shm_ptr = (shm_container*)shmat(shm_id, 0, 0)) == (shm_container*)-1)
+    {
+        perror("oss.c: Error with shmat, exiting\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+void init_shm()
+{
+    //Initialize shared memory contrainer
+    int proc_i, page_i, frame_i;
+
+    //Start w process control block
+    for(proc_i = 0; proc_i < MAX_PROC; proc_i++)
+    {
+        shm_ptr->running_pids[proc_i] = 0;
+        shm_ptr->procs[proc_i].died = false;
+        shm_ptr->procs[proc_i].page_count = 0;
+        shm_ptr->procs[proc_i].page_index = 0;
+        shm_ptr->procs[proc_i].waitingFor = 0;
+        for(page_i = 0; page_i < MAX_FRAMES; page_i++)
+        {
+            shm_ptr->procs[proc_i].pageTable[page_i].frame_num = -1;
+            shm_ptr->procs[proc_i].pageTable[page_i].address = 0;
+        }
+    }
+    //Initialize frameTable
+    for(frame_i = 0; frame_i < MAX_MEM; frame_i++)
+    {
+        shm_ptr->frames[frame_i].proc_num = 0;
+        shm_ptr->frames[frame_i].dirtyBit = 0;
+        shm_ptr->frames[frame_i].address = 0;
+    }
+
+    //Initialize clock and frame table indexes
+    shm_ptr->nsecs = 0;
+    shm_ptr->secs = 0;
+    shm_ptr->nextEntry = 0;
+    shm_ptr->lookingFor = 0;
+}
+
+void init_sem()
+{
+    //Initialize semaphores for the clock and process count
+    semctl(sem_id, PROC_CT_SEM, SETVAL, 1);
+    semctl(sem_id, CLOCK_SEM, SETVAL, 1);
+
+    //Initialize wait flags
+    for(int index = 0; index < MAX_PROC; index++)
+    {
+        semctl(sem_id, index, SETVAL, 1);
+    }
+}
+
+void sem_signal(int sem)
+{
+    //Semaphore signal function
+    struct sembuf sema;
+    sema.sem_num = sem;
+    sem.sem_op = 1;
+    sem.sem_flg = 0;
+    semop(sem_id, &sema, 1);
+}
+
+void sem_wait(int sem)
 {
     //Semaphore wait function
-    struct sembuf sem;
-    sem.sem_num = 0;
+    struct sembuf sema;
+    sema.sem_num = sem;
     sem.sem_op = -1;
     sem.sem_flg = 0;
-    semop(sem_id, &sem, 1);
+    semop(sem_id, &sema, 1);
+}
+
+void forkClockFix()
+{
+    unsigned long nano_time_fork = nsec_until_fork;
+    if (nano_time_fork >= 1000000000)  
+    {
+        sec_until_fork += 1;
+        nsec_until_fork -= 1000000000;
+    }
 }
 
 bool timePassed()
 {
     //Check if enough time has passed for another fork
-    if(sec_until_fork == sh_mem_ptr->sec_timer)
+    if(sec_until_fork == shm_ptr->secs)
     {
-        if(nsec_until_fork <= sh_mem_ptr->nsec_timer)
+        if(nsec_until_fork <= shm_ptr->nsecs)
         {
             //Enough time has passed
             return true;
         }
     }
-    else if(sec_until_fork < sh_mem_ptr->sec_timer)
+    else if(sec_until_fork < shm_ptr->secs)
     {
         //Enough time has passed
         return true;
@@ -277,6 +274,17 @@ bool timePassed()
     {
         //Not enough time has passed
         return false;
+    }
+}
+
+void nsecsToSecs()
+{
+    //When there are enough nanoseconds, convert to seconds
+    unsigned long nano_time = shm_ptr->nsecs;
+    if (nano_time >= 1000000000)
+    {
+        shm_ptr->secs += 1;
+        shm_ptr->nsecs -= 1000000000;
     }
 }
 
@@ -293,26 +301,21 @@ void fork_proc()
     int index, pid;
     for (index = 0; index < MAX_PROC; index++)
     {
-        if(sh_mem_ptr->running_proc_pid[index] == 0)
+        if(shm_ptr->running_pids[index] == 0)
         {
-            numOfProcs++;
+            sem_signal(PROC_CT_SEM);
             numOfForks++;
             pid = fork();
 
             if(pid != 0)
             {
-                sprintf(stringBuf, "P%d with PID: %d was forked at %d : %d\n", index, pid, sh_mem_ptr->sec_timer, sh_mem_ptr->nsec_timer);
+                sprintf(stringBuf, "P%d with PID: %d was forked at %d : %d\n", index, pid, shm_ptr->secs, shm_ptr->nsecs);
                 writeToLog(stringBuf);
-                sh_mem_ptr->running_proc_pid[index] = pid;
+                shm_ptr->running_pids[index] = pid;
                 //Determine next time to fork
                 writeToLog("Determining when next process will fork\n");
-                nsec_until_fork = sh_mem_ptr->nsec_timer + (rand() % 500000000);
-                unsigned long nano_time_fork = nsec_until_fork;
-                if (nano_time_fork >= 1000000000)
-                {
-                    sec_until_fork += 1;
-                    nsec_until_fork -= 1000000000;
-                }
+                nsec_until_fork = shm_ptr->nsecs + (rand() % 500000000);
+                forkClockFix();
                 return;
             }
             else
@@ -332,7 +335,7 @@ void sig_handler()
 
 void alarm_handler()
 {
-    printf("alarm_handler called, 5 seconds have passed\n");
+    printf("alarm_handler called, 2 seconds have passed\n");
     cleanup();
 }
 

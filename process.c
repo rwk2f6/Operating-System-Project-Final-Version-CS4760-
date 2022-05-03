@@ -1,19 +1,21 @@
 #include "config.h"
 
 //Global variables
-int shmem_id;
+int shm_id;
 int sem_id;
-sh_mem_struct* sh_mem_ptr = NULL;
+shm_container* shm_ptr = NULL;
 int cur_pid;
 int cur_index;
 char stringBuf[200];
 unsigned long starting_nsec, starting_sec, wait_nsec, wait_sec;
-int random_resource, random_instance;
+int random_resource, random_instance, req_address;
+
+bool checkSysClock();
 
 int main(int argc, char *argv[])
 {
     //Initialize local variables
-    int index;
+    int index, numOfUsedRes;
 
     cur_pid = getpid();
     //Seed rand based off of pid so each process is different
@@ -24,164 +26,91 @@ int main(int argc, char *argv[])
     signal(SIGINT, sig_handler); //Catches ctrl-c
     signal(SIGSEGV, sig_handler); //Catches seg fault
     signal(SIGKILL, sig_handler); //Catches a kill signal
+    signal(SIGTERM, sig_handler);
 
-    //Initialize semaphore for resource access
-    key_t sem_key = ftok("oss.c", 'a');
-
-    if((sem_id = semget(sem_key, MAX_SEM, 0)) == -1)
+    //Initialize semaphore
+    if(set_sem() == -1)
     {
-        perror("process.c: semget failed!\n");
         cleanup();
-        exit(0);
     }
 
     //Initialize shared memory
-    key_t shmem_key = ftok("process.c", 'a');
-
-    if((shmem_id = shmget(shmem_key, (sizeof(resource_struct) * MAX_PROC) + sizeof(sh_mem_struct), IPC_EXCL)) == -1)
+    if(set_shm() == -1)
     {
-        perror("process.c: shmget failed!\n");
         cleanup();
-        exit(0);
-    }
-
-    if((sh_mem_ptr = (sh_mem_struct*)shmat(shmem_id, 0, 0)) == (sh_mem_struct*)-1)
-    {
-        perror("process.c: shmat failed!\n");
-        cleanup();
-        exit(0);
     }
 
     //Find the index of the process in the process table using PID
     cur_index = findIndex(cur_pid);
 
-    //Initialize elements inside of shared memory
-    sh_mem_ptr->needs[cur_index] = -1;
-    sh_mem_ptr->blocked[cur_index] = false;
-    sh_mem_ptr->complete[cur_index] = ND;
-    sh_mem_ptr->sleeping_proc_arr[cur_index] = 0;
-
-    for (index = 0; index < MAX_RESOURCE; index++)
-    {
-        sh_mem_ptr->allocated_resources[index].allocated_arr[cur_index] = 0;
-        sh_mem_ptr->allocated_resources[index].request_arr[cur_index] = 0;
-        sh_mem_ptr->allocated_resources[index].release_arr[cur_index] = 0; 
-    }
-
     //Update timer before process starts
     sem_wait(CLOCK_SEM);
 
-    starting_nsec = sh_mem_ptr->nsec_timer;
-    starting_sec = sh_mem_ptr->sec_timer;
+    starting_nsec = shm_ptr->nsecs;
+    starting_sec = shm_ptr->secs;
 
     sem_signal(CLOCK_SEM);
 
-    wait_nsec = starting_nsec;
-    wait_sec = starting_sec;
-
-    //Set the random time to wait
-    int random_time = rand() % 250000000;
-    wait_nsec += random_time;
-    if (wait_nsec >= 1000000000)
+    while (1)
     {
-        wait_nsec -= 1000000000;
-        wait_sec += 1;
-    }
-
-    //Make sure process wasn't set to be killed
-    while(sh_mem_ptr->complete[cur_index] != OSS_KILL)
-    {
-        //Wait until enough time has passed
-        while(1)
+        //See if process has used all of its memory requests
+        if (shm_ptr->procs[cur_index].page_count == 32)
         {
-            if (checkSysClock())
+            printf("All available memory used, dying\n");
+            shm_ptr->procs[cur_index].died = true;
+            break;
+        }
+
+        req_address = 200000 + (rand() % 53000);
+
+        int temp = rand() % 100;
+
+        //Write is less frequent than READ
+        if (temp == 3)
+        {
+            shm_ptr->procs[cur_index].type = WRITE;
+        }
+        else
+        {
+            shm_ptr->procs[cur_index].type = READ;
+        }
+
+        //Send request
+        shm_ptr->procs[cur_index].waitingFor = req_address;
+
+        sem_wait(cur_index);
+
+        //Wait for request to be completed
+        while (1)
+        {
+            temp = semctl(sem_id, cur_index, GETVAL, 0);
+            if (temp == 1)
             {
                 break;
             }
         }
-        //Process now checks to see if it got its resources
-        if (sh_mem_ptr->sleeping_proc_arr[cur_index] == 1 || sh_mem_ptr->blocked[cur_index] == true)
+
+        //Chance to die
+        temp = rand() % 150;
+        if (temp = 15)
         {
-            //Do nothing, as these processes are waiting
-        }
-        else
-        {
-            //The process isn't waiting
-            //Make sure the process has been running for at least a second
-            if (sh_mem_ptr->sec_timer - starting_sec > 1)
-            {
-                if (sh_mem_ptr->nsec_timer > starting_nsec )
-                {
-                    if (rand() % 100 == 22)
-                    {
-                        //Small chance to randomly terminate early
-                        sem_wait(RESOURCE_SEM);
-                        sh_mem_ptr->complete[cur_index] = EARLY_TERM;
-                        sem_signal(RESOURCE_SEM);
-                        break;
-                    }
-                }
-            }
-            //Didn't terminate early, so pick a random resource to request or release
-            random_resource = rand() % MAX_RESOURCE;
-            sem_wait(RESOURCE_SEM);
-
-            if (sh_mem_ptr->allocated_resources[random_resource].allocated_arr[cur_index] > 0)
-            {
-                //Has resources allocated, 50% chance to release
-                if (rand() % 100 < 50)
-                {
-                    //printf("P%d is releasing R%d\n", cur_index, random_resource);
-                    sh_mem_ptr->allocated_resources[random_resource].release_arr[cur_index] = sh_mem_ptr->allocated_resources[random_resource].allocated_arr[cur_index];
-                    sh_mem_ptr->blocked[cur_index] = true;
-                }
-            }
-            else
-            {
-                //No resources allocated
-                if (rand() % 100 < 50)
-                {
-                    random_instance = 1 + (rand() % sh_mem_ptr->allocated_resources[random_resource].numOfInstances);
-                    if (random_instance > 0)
-                    {
-                        //printf("P%d is requesting to get %d instances of R%d\n", cur_index, random_instance, random_resource);
-                        sh_mem_ptr->allocated_resources[random_resource].request_arr[cur_index] = random_instance;
-                        sh_mem_ptr->blocked[cur_index] = true;
-                    }
-                }
-            }
-            sem_signal(RESOURCE_SEM);
-
-            //Make a wait time for next request/release
-            sem_wait(CLOCK_SEM);
-
-            random_time = rand() % 250000000;
-            wait_nsec = sh_mem_ptr->nsec_timer;
-            wait_nsec += random_time;
-            if (wait_nsec >= 1000000000)
-            {
-                wait_nsec -= 1000000000;
-                wait_sec += 1;
-            }
-
-            sem_signal(CLOCK_SEM);
-
+            shm_ptr->procs[cur_index].died = true;
+            break;
         }
     }
 
     cleanup();
-    return 0;
 }
 
 bool checkSysClock()
 {
-    if (sh_mem_ptr->sec_timer > wait_sec)
+    if (shm_ptr->secs > wait_sec)
     {
         return true;
     }
-    else if (sh_mem_ptr->sec_timer == wait_sec)
+    else if (shm_ptr->secs == wait_sec)
     {
-        if (sh_mem_ptr->nsec_timer > wait_nsec)
+        if (shm_ptr->nsecs > wait_nsec)
         {
             return true;
         }
@@ -197,14 +126,16 @@ void sig_handler()
 
 void cleanup()
 {
-    shmdt(sh_mem_ptr);
+    shmdt(shm_ptr);
+    sem_wait(PROC_CT_SEM);
+    exit(0);
 }
 
 int findIndex(int pid)
 {
     for (int i = 0; i < MAX_PROC; i++)
     {
-        if (pid == sh_mem_ptr->running_proc_pid[i])
+        if (pid == shm_ptr->running_pids[i])
         {
             return i;
         }
@@ -212,22 +143,56 @@ int findIndex(int pid)
     return -1;
 }
 
-void sem_signal(int sem_id)
+void sem_signal(int sem)
 {
     //Semaphore signal function
-    struct sembuf sem;
-    sem.sem_num = 0;
-    sem.sem_op = 1;
-    sem.sem_flg = 0;
-    semop(sem_id, &sem, 1);
+    struct sembuf sema;
+    sema.sem_num = sem;
+    sema.sem_op = 1;
+    sema.sem_flg = 0;
+    semop(sem_id, &sema, 1);
 }
 
-void sem_wait(int sem_id)
+void sem_wait(int sem)
 {
     //Semaphore wait function
-    struct sembuf sem;
-    sem.sem_num = 0;
-    sem.sem_op = -1;
-    sem.sem_flg = 0;
-    semop(sem_id, &sem, 1);
+    struct sembuf sema;
+    sema.sem_num = sem;
+    sema.sem_op = -1;
+    sema.sem_flg = 0;
+    semop(sem_id, &sema, 1);
+}
+
+void set_sem()
+{
+    //Initialize semaphores for resource access
+    key_t sem_key = ftok("oss.c", 'a');
+
+    if((sem_id = semget(sem_key, MAX_SEM, 0)) == -1)
+    {
+        perror("oss.c: Error with semget, exiting\n");
+        return -1;
+    }
+    return 0;
+}
+
+void set_shm()
+{
+    key_t shm_key = ftok("process.c", 'a');
+
+    if((shm_id = shmget(shm_key, (sizeof(frame) * MAX_MEM) + sizeof(shm_container) + (sizeof(proc_stats) * MAX_PROC) + (sizeof(page) * MAX_MEM), IPC_EXCL)) == -1)
+    {
+        perror("oss.c: Error with shmget, exiting\n");
+        return -1;
+    }
+
+    //printf("Shared memory gotten, attaching now\n");
+
+    if((shm_ptr = (shm_container*)shmat(shm_id, 0, 0)) == (shm_container*)-1)
+    {
+        perror("oss.c: Error with shmat, exiting\n");
+        return -1;
+    }
+
+    return 0;
 }

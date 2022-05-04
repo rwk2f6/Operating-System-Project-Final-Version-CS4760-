@@ -348,26 +348,37 @@ void child_handler(int sig)
     }
 }
 
-void finalReport()
+void print_stats()
 {
-    fputs("\n\nFinal Report:\n\n", logfile_ptr);
-    sprintf(stringBuf, "Number of processes that immediately received resources: %d\n", instant_resource_allo);
-    fputs(stringBuf, logfile_ptr);
-    sprintf(stringBuf, "Number of processes that waited to receive resources: %d\n", waited_for_allo);
-    fputs(stringBuf, logfile_ptr);
-    sprintf(stringBuf, "Number of processes terminated successfully: %d\n", total_completed_procs);
-    fputs(stringBuf, logfile_ptr);
-    sprintf(stringBuf, "Number of processes terminated by deadlock detection: %d\n", term_by_deadlock);
-    fputs(stringBuf, logfile_ptr);
-    sprintf(stringBuf, "Number of time deadlock detection ran: %d\n", deadlockdet_run);
-    fputs(stringBuf, logfile_ptr);
-    double percent = (double)term_by_deadlock / (double)deadlockdet_run;
-    percent *= 100;
-    sprintf(stringBuf, "%.8f percent of the time, deadlock detection was run, found a deadlock, and killed a process\n", percent);
-    fputs(stringBuf, logfile_ptr);
+
 }
 
+void print_mem()
+{
 
+}
 
+int nextSwap()
+{
 
+}
 
+bool inFrameTable()
+{
+
+}
+
+void findPage()
+{
+
+}
+
+void check_died()
+{
+
+}
+
+void printPIDTable()
+{
+    
+}

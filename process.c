@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     while (1)
     {
         //See if process has used all of its memory requests
-        if (shm_ptr->procs[cur_index].page_count == 32)
+        if (shm_ptr->procs[cur_index].pageCount == 32)
         {
             printf("All available memory used, dying\n");
             shm_ptr->procs[cur_index].died = true;

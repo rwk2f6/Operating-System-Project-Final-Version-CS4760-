@@ -49,8 +49,8 @@ typedef struct {
    int type;
    bool died;
    page pageTable[MAX_FRAMES];
-   int page_index;
-   int page_count;
+   int pageIndex;
+   int pageCount;
 
 } proc_stats;
 

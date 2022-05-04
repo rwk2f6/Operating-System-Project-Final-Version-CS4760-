@@ -6,9 +6,9 @@ int sem_id;
 int proc_count = 0;
 char stringBuf[200];
 int numOfForks = 0;
-int filled_frames = 0;
+int usedFrames = 0;
 int frame_num;
-int mem_acc = 0;
+int mem_access = 0;
 int page_faults = 0;
 int prevPrint = 0;
 int log_line_num = 0;
@@ -31,11 +31,10 @@ void print_stats();
 void print_mem();
 void alarm_handler();
 int nextSwap();
-bool inFrameTable();
+bool inFrameTable(int);
 void findPage();
 void check_died();
-void printPIDTable();
-void fork_proc();
+void forkNewProc();
 void nsecsToSecs();
 void forkClockFix();
 bool timePassed();
@@ -89,6 +88,7 @@ int main(int argc, char *argv[])
     writeToLog("Alarm has been set for 2 real seconds\n");
 
     writeToLog("Main oss.c loop starting, logical clock begins\n");
+
     //Begin main loop
     while(1)
     {
@@ -97,6 +97,22 @@ int main(int argc, char *argv[])
         //Check for processes that died
 
         //Fork if enough time has passed and there aren't 18 processes
+        if (sec_until_fork == 0 && nsec_until_fork == 0)
+        {
+            forkNewProc();
+        }
+        else
+        {
+            if (timePassed)
+            {
+                int semVarCount = semctl(sem_id, PROC_CT_SEM, GETVAL, 0);
+
+                if (semVarCount < MAX_PROC)
+                {
+                    forkNewProc();
+                }
+            }
+        }
 
         //Check how many frames were filled
 
@@ -187,8 +203,8 @@ void init_shm()
     {
         shm_ptr->running_pids[proc_i] = 0;
         shm_ptr->procs[proc_i].died = false;
-        shm_ptr->procs[proc_i].page_count = 0;
-        shm_ptr->procs[proc_i].page_index = 0;
+        shm_ptr->procs[proc_i].pageCount = 0;
+        shm_ptr->procs[proc_i].pageIndex = 0;
         shm_ptr->procs[proc_i].waitingFor = 0;
         for(page_i = 0; page_i < MAX_FRAMES; page_i++)
         {
@@ -288,7 +304,7 @@ void nsecsToSecs()
     }
 }
 
-void fork_proc()
+void forkNewProc()
 {
     //Keep track of total processes and terminate if it reaches 40
     if (numOfForks >= 100)
@@ -350,35 +366,101 @@ void child_handler(int sig)
 
 void print_stats()
 {
-
+    writeToLog("FINAL STATS:\n");
+    sprintf(stringBuf, "Number of memory accesses per second: %.5f\n", (double)mem_access / (double)shm_ptr->secs);
+    writeToLog(stringBuf);
+    sprintf(stringBuf, "Number of page faults per memory access: %.5f\n", (double)page_faults / (double)mem_access);
+    writeToLog(stringBuf);
+    sprintf(stringBuf, "Average memory access speed: %.5f\n", (double)shm_ptr->secs / (double)mem_access);
+    writeToLog(stringBuf);
 }
 
 void print_mem()
 {
-
+    sprintf(stringBuf, "Current memory layout at time %d : %d is:\n", shm_ptr->secs, shm_ptr->nsecs);
+    writeToLog(stringBuf);
+    writeToLog("    Occupied    DirtyBit\n");
+    for (int i = 0; i < MAX_MEM; i++)
+    {
+        sprintf(stringBuf, "Frame %d: %d    %d\n", i, shm_ptr->frames[i].address, shm_ptr->frames[i].dirtyBit);
+        writeToLog(stringBuf);
+    }
+    writeToLog("\n");
 }
 
 int nextSwap()
 {
+    int tempVar;
+    tempVar = shm_ptr->lookingFor;
 
+    for (int index = 0; index < MAX_MEM; index++)
+    {
+        if (shm_ptr->frames[tempVar].dirtyBit == 0)
+        {
+            shm_ptr->lookingFor = (tempVar + 1) % MAX_MEM;
+            return tempVar;
+        }
+        tempVar = (tempVar + 1) % MAX_MEM;
+    }
+    //If no frames are swappable, return -1
+    return -1;
 }
 
-bool inFrameTable()
+bool inFrameTable(int frame)
 {
-
+    //See if a frame is in a frametable
+    for (int i = 0; i < MAX_MEM; i++)
+    {
+        if (shm_ptr->frames[i].address == frame)
+        {
+            frame_num = i;
+            shm_ptr->frames[frame_num].dirtyBit = 1;
+            sprintf(stringBuf, "Dirty bit of frame %d set at time %d : %d, adding additional time to the clock", frame_num, shm_ptr->secs, shm_ptr->nsecs);
+            writeToLog(stringBuf);
+            shm_ptr->nsecs += 107;
+            nsecsToSecs();
+            return true;
+        }
+    }
+    return false;
 }
 
 void findPage()
 {
+    int tempVar;
+    usedFrames = 0;
+    tempVar = shm_ptr->lookingFor;
+
+    for (int i = 0; i < MAX_PROC; i++)
+    {
+        usedFrames += shm_ptr->procs[i].pageCount;
+    }
 
 }
 
 void check_died()
 {
-
-}
-
-void printPIDTable()
-{
-    
+    for (int a = 0; a < MAX_PROC; a++)
+    {
+        if (shm_ptr->procs[a].died == true)
+        {
+            shm_ptr->procs[a].pageCount = 0;
+            shm_ptr->procs[a].pageIndex = 0;
+            shm_ptr->procs[a].waitingFor = 0;
+            shm_ptr->procs[a].type = 0;
+            shm_ptr->procs[a].died = false;
+            semctl(sem_id, a, SETVAL, 1);
+            //Clean frame table
+            for (int b = 0; b < MAX_FRAMES; b++)
+            {
+                if (shm_ptr->procs[a].pageTable[b].frame_num != -1)
+                {
+                    shm_ptr->frames[shm_ptr->procs[a].pageTable[b].frame_num].proc_num = 0;
+                    shm_ptr->frames[shm_ptr->procs[a].pageTable[b].frame_num].dirtyBit = 0;
+                    shm_ptr->frames[shm_ptr->procs[a].pageTable[b].frame_num].address = 0;
+                }
+            }
+            shm_ptr->running_pids[a] = 0;
+        }
+    }
 }

@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
         int temp = rand() % 100;
 
         //Write is less frequent than READ
-        if (temp <= 25)
+        if (temp <= 40)
         {
             printf("P%d is requesting a write\n", cur_index);
             shm_ptr->procs[cur_index].type = WRITE;

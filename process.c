@@ -163,7 +163,7 @@ void sem_wait(int sem)
     semop(sem_id, &sema, 1);
 }
 
-void set_sem()
+int set_sem()
 {
     //Initialize semaphores for resource access
     key_t sem_key = ftok("oss.c", 'a');
@@ -176,7 +176,7 @@ void set_sem()
     return 0;
 }
 
-void set_shm()
+int set_shm()
 {
     key_t shm_key = ftok("process.c", 'a');
 

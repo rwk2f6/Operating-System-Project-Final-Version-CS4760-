@@ -44,6 +44,10 @@ void child_handler(int);
 
 int main(int argc, char *argv[])
 {
+    srand(time(NULL));
+
+    int frameLoc;
+
     //Signal handlers for timer, CTRL-C, and random termination
     signal(SIGALRM, alarm_handler); //Catches alarm
     signal(SIGINT, sig_handler); //Catches ctrl-c
@@ -93,8 +97,14 @@ int main(int argc, char *argv[])
     while(1)
     {
         //Print memory allocation every second
+        if (shm_ptr->secs > prevPrint)
+        {
+            prevPrint = shm_ptr->secs;
+            print_mem();
+        }
 
         //Check for processes that died
+        check_died();
 
         //Fork if enough time has passed and there aren't 18 processes
         if (sec_until_fork == 0 && nsec_until_fork == 0)
@@ -115,10 +125,234 @@ int main(int argc, char *argv[])
         }
 
         //Check how many frames were filled
+        findPage();
 
         //Check for waiting processes, and try to complete their request. If the request isnt in the page table, FIFO
+        for (int i = 0; i < MAX_PROC; i++)
+        {
+            int tempVar = semctl(sem_id, i, GETVAL, 0);
+            //Found a waiting process
+            if (tempVar == 0)
+            {
+                if (usedFrames < MAX_MEM)
+                {
+                    //There are empty frames
+                    if (shm_ptr->procs[i].type == READ)
+                    {
+                        sprintf(stringBuf, "P%d requesting read of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
+                        writeToLog(stringBuf);
+                        if (inFrameTable(shm_ptr->procs[i].waitingFor))
+                        {
+                            //Already in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d in frame table, giving data to P%d at time %d : %d\n", shm_ptr->procs[i].waitingFor, i, shm_ptr->secs, shm_ptr->nsecs);
+                            writeToLog(stringBuf);
+                            mem_access++;
+                            sem_signal(i);
+                        }
+                        else
+                        {
+                            //No in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d is not in frame table, pagefault!\n", shm_ptr->procs[i].waitingFor);
+                            writeToLog(stringBuf);
+                            page_faults++;
+                            frameLoc = shm_ptr->nextEntry;
+                            //Find next empty frame, FIFO
+                            while (1)
+                            {
+                                if (shm_ptr->frames[frameLoc].address == 0)
+                                {
+                                    break;
+                                }
+                                else
+                                {
+                                    frameLoc = (frameLoc + 1) % MAX_MEM;
+                                }
+                            }
+                            //Insert
+                            shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
+                            shm_ptr->frames[frameLoc].dirtyBit = 0;
+                            shm_ptr->frames[frameLoc].proc_num = i;
+                            shm_ptr->nextEntry = (frameLoc + 1) % MAX_MEM;
+                            sprintf(stringBuf, "Address %d in frame %d, giving data to P%d at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, i, shm_ptr->secs, shm_ptr->nsecs);
+                            writeToLog(stringBuf);
+                            shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].address = shm_ptr->procs[i].waitingFor;
+                            shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].frame_num = frameLoc;
+                            shm_ptr->procs[i].pageIndex += 1;
+                            shm_ptr->procs[i].pageCount++;
+                            shm_ptr->nsecs += 14000000;
+                            usedFrames++;
+                            nsecsToSecs();
+                            sem_signal(i);
+                        }
+                    }
+                    else
+                    {
+                        //Write type
+                        sprintf(stringBuf, "P%d requesting write of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
+                        writeToLog(stringBuf);
 
+                        if (inFrameTable(shm_ptr->procs[i].waitingFor))
+                        {
+                            //Check if address is already in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d in frame table, writing data to frame at time %d : %d\n", shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
+                            writeToLog(stringBuf);
+                            mem_access++;
+                            sem_signal(i);
+                        }
+                        else
+                        {
+                            //Not in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d is not in a frame, pagefault!\n", shm_ptr->procs[i].waitingFor);
+                            writeToLog(stringBuf);
+                            page_faults++;
+                            frameLoc == shm_ptr->nextEntry;
+                            //Find a blank frame
+                            while (1)
+                            {
+                                if (shm_ptr->frames[frameLoc].address == 0)
+                                {
+                                    break;
+                                }
+                                else
+                                {
+                                    frameLoc = (frameLoc + 1) % MAX_MEM;
+                                }
+                            }
+                            //Insert
+                            shm_ptr->frames[frameLoc].dirtyBit = 0;
+                            shm_ptr->frames[frameLoc].proc_num = i;
+                            shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
+                            shm_ptr->nextEntry = (frameLoc + 1) % MAX_MEM;
+                            sprintf(stringBuf, "Address %d in frame %d, writing data to frame at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, shm_ptr->secs, shm_ptr->nsecs);
+                            writeToLog(stringBuf);
+                            mem_access++;
+                            shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].address = shm_ptr->procs[i].waitingFor;
+                            shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].frame_num = frameLoc;
+                            shm_ptr->procs[i].pageIndex += 1;
+                            shm_ptr->procs[i].pageCount++;
+                            shm_ptr->nsecs += 14000000;
+                            usedFrames++;
+                            nsecsToSecs();
+                            sem_signal(i);
+                        }
+                    }
+                }
+                else
+                {
+                    //Find the next frame that is replacible, ie dirtyBity = 0
+                    if (shm_ptr->procs[i].type == READ)
+                    {
+                        sprintf(stringBuf, "P%d requesting read of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
+                        writeToLog(stringBuf);
+                        if (inFrameTable(shm_ptr->procs[i].waitingFor))
+                        {
+                            //Already in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d in frame table, giving data to P%d at time %d : %d\n", shm_ptr->procs[i].waitingFor, i, shm_ptr->secs, shm_ptr->nsecs);
+                            writeToLog(stringBuf);
+                            mem_access++;
+                            sem_signal(i);
+                        }
+                        else
+                        {
+                            //No in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d is not in frame table, pagefault!\n", shm_ptr->procs[i].waitingFor);
+                            writeToLog(stringBuf);
+                            page_faults++;
+                            if ((frameLoc = nextSwap()) != -1)
+                            {
+                                //There is a frame that can be replaced
+                                shm_ptr->nsecs += 14000000;
+                                nsecsToSecs();
+                                shm_ptr->frames[frameLoc].proc_num = i;
+                                shm_ptr->frames[frameLoc].dirtyBit = 0;
+                                shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
+                                sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
+                                writeToLog(stringBuf);
+                                shm_ptr->nsecs += 14000000;
+                                nsecsToSecs();
+                                sprintf(stringBuf, "Address %d in frame, giving data to P%d at time %d : %d\n", shm_ptr->procs[i].waitingFor, i, shm_ptr->secs, shm_ptr->nsecs);
+                                writeToLog(stringBuf);
+                                mem_access++;
+                                shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].frame_num = frameLoc;
+                                shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].address = shm_ptr->procs[i].waitingFor;
+                                shm_ptr->procs[i].pageIndex += 1;
+                                shm_ptr->procs[i].pageCount++;
+                                sem_signal(i);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        //Write
+                        sprintf(stringBuf, "P%d requesting write of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
+                        writeToLog(stringBuf);
+
+                        if (inFrameTable(shm_ptr->procs[i].waitingFor))
+                        {
+                            //Check if address is already in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d in frame table, writing data to frame at time %d : %d\n", shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
+                            writeToLog(stringBuf);
+                            mem_access++;
+                            sem_signal(i);
+                        }
+                        else
+                        {
+                            //Not in frame table
+                            shm_ptr->nsecs += 14000000;
+                            nsecsToSecs();
+                            sprintf(stringBuf, "Address %d is not in a frame, pagefault!\n", shm_ptr->procs[i].waitingFor);
+                            writeToLog(stringBuf);
+                            page_faults++;
+                            if ((frameLoc = nextSwap()) != -1)
+                            {
+                                //There is a frame that can be replaced
+                                shm_ptr->nsecs += 14000000;
+                                nsecsToSecs();
+                                shm_ptr->frames[frameLoc].proc_num = i;
+                                shm_ptr->frames[frameLoc].dirtyBit = 0;
+                                shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
+                                sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
+                                writeToLog(stringBuf);
+                                shm_ptr->nsecs += 14000000;
+                                nsecsToSecs();
+                                sprintf(stringBuf, "Address %d in frame, giving data to P%d at time %d : %d\n", shm_ptr->procs[i].waitingFor, i, shm_ptr->secs, shm_ptr->nsecs);
+                                writeToLog(stringBuf);
+                                mem_access++;
+                                shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].frame_num = frameLoc;
+                                shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].address = shm_ptr->procs[i].waitingFor;
+                                shm_ptr->procs[i].pageIndex += 1;
+                                shm_ptr->procs[i].pageCount++;
+                                sem_signal(i);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                //Do nothing, wait for a request to be put in
+            }
+        }
         //Update clock
+        sem_wait(CLOCK_SEM);
+        nano_time_pass = 1 + (rand() % 100000000);
+        shm_ptr->nsecs += nano_time_pass;
+        nsecsToSecs();
+        sem_signal(CLOCK_SEM);
     }
 
     return 0;
@@ -126,8 +360,7 @@ int main(int argc, char *argv[])
 
 void writeToLog(char * string)
 {
-    log_line_num++;
-    //Make sure log file isn't 10000 lines long, if it is terminate
+    //log_line_num never increments, so log_line_num is always <= 10000
     if (log_line_num <= 10000)
     {
         fputs(string, logfile_ptr);
@@ -143,8 +376,8 @@ void writeToLog(char * string)
 void cleanup()
 {
     printf("Cleanup called\n");
-    
-
+    print_mem();
+    print_stats();
     fputs("OSS is terminating, cleaning up shared memory, semaphores, and child processes\n", logfile_ptr);
     //Output resource report here
     if (logfile_ptr != NULL)
@@ -245,8 +478,8 @@ void sem_signal(int sem)
     //Semaphore signal function
     struct sembuf sema;
     sema.sem_num = sem;
-    sem.sem_op = 1;
-    sem.sem_flg = 0;
+    sema.sem_op = 1;
+    sema.sem_flg = 0;
     semop(sem_id, &sema, 1);
 }
 
@@ -255,8 +488,8 @@ void sem_wait(int sem)
     //Semaphore wait function
     struct sembuf sema;
     sema.sem_num = sem;
-    sem.sem_op = -1;
-    sem.sem_flg = 0;
+    sema.sem_op = -1;
+    sema.sem_flg = 0;
     semop(sem_id, &sema, 1);
 }
 
@@ -309,8 +542,8 @@ void forkNewProc()
     //Keep track of total processes and terminate if it reaches 40
     if (numOfForks >= 100)
     {
-        printf("oss.c: Terminating as 40 total children have been forked\n");
-        writeToLog("oss.c: Terminating as 40 total children have been forked\n");
+        printf("oss.c: Terminating as 100 total children have been forked\n");
+        writeToLog("oss.c: Terminating as 100 total children have been forked\n");
         cleanup();
     }
 

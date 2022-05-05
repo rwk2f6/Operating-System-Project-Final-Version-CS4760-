@@ -34,6 +34,7 @@ int nextSwap();
 bool inFrameTable(int);
 void findPage();
 void check_died();
+void checkForDeadlock();
 void forkNewProc();
 void nsecsToSecs();
 void forkClockFix();
@@ -41,12 +42,13 @@ bool timePassed();
 void init_shm();
 void init_sem();
 void child_handler(int);
+int getNextFrameLocation(unsigned int);
 
 int main(int argc, char *argv[])
 {
     srand(time(NULL));
 
-    int frameLoc;
+    unsigned int frameLoc;
 
     //Signal handlers for timer, CTRL-C, and random termination
     signal(SIGALRM, alarm_handler); //Catches alarm
@@ -65,15 +67,13 @@ int main(int argc, char *argv[])
     writeToLog("Oss.c Logfile:\n\n");
     writeToLog("Logfile created successfully!\n");
 
-    //printf("Logfile created\n");
+    printf("Logfile created\n");
 
     //Initialize semaphores
     if(set_sem() == -1)
     {
         cleanup();
     }
-
-    //printf("Semaphores initialized\n");
 
     //Initialize shared memory
     if(set_shm() == -1)
@@ -84,14 +84,18 @@ int main(int argc, char *argv[])
     init_sem();
     init_shm();
 
+    printf("Semaphores & shared memory initialized\n");
+
     writeToLog("Semaphores initialized\n");
     writeToLog("Shared memory initialized\n");
 
     //Set alarm for 2 seconds
     alarm(2);
     writeToLog("Alarm has been set for 2 real seconds\n");
+    printf("Alarm set for 2 seconds\n");
 
     writeToLog("Main oss.c loop starting, logical clock begins\n");
+    printf("Main loop begins\n");
 
     //Begin main loop
     while(1)
@@ -99,12 +103,16 @@ int main(int argc, char *argv[])
         //Print memory allocation every second
         if (shm_ptr->secs > prevPrint)
         {
+            printf("Printing memory layout\n");
             prevPrint = shm_ptr->secs;
             print_mem();
         }
 
         //Check for processes that died
         check_died();
+
+        //Check for a deadlock
+        checkForDeadlock();
 
         //Fork if enough time has passed and there aren't 18 processes
         if (sec_until_fork == 0 && nsec_until_fork == 0)
@@ -139,10 +147,12 @@ int main(int argc, char *argv[])
                     //There are empty frames
                     if (shm_ptr->procs[i].type == READ)
                     {
+                        printf("Read process request\n");
                         sprintf(stringBuf, "P%d requesting read of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
                         writeToLog(stringBuf);
                         if (inFrameTable(shm_ptr->procs[i].waitingFor))
                         {
+                            printf("Already in frame table\n");
                             //Already in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
@@ -153,6 +163,7 @@ int main(int argc, char *argv[])
                         }
                         else
                         {
+                            printf("Not in the frame table\n");
                             //No in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
@@ -161,17 +172,18 @@ int main(int argc, char *argv[])
                             page_faults++;
                             frameLoc = shm_ptr->nextEntry;
                             //Find next empty frame, FIFO
-                            while (1)
-                            {
-                                if (shm_ptr->frames[frameLoc].address == 0)
-                                {
-                                    break;
-                                }
-                                else
-                                {
-                                    frameLoc = (frameLoc + 1) % MAX_MEM;
-                                }
-                            }
+                            // while (1)
+                            // {
+                            //     if (shm_ptr->frames[frameLoc].address == 0)
+                            //     {
+                            //         break;
+                            //     }
+                            //     else
+                            //     {
+                            //         frameLoc = (frameLoc + 1) % MAX_MEM;
+                            //     }
+                            // }
+                            frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                             shm_ptr->frames[frameLoc].dirtyBit = 0;
@@ -191,12 +203,14 @@ int main(int argc, char *argv[])
                     }
                     else
                     {
+                        printf("Write process request\n");
                         //Write type
                         sprintf(stringBuf, "P%d requesting write of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
                         writeToLog(stringBuf);
 
                         if (inFrameTable(shm_ptr->procs[i].waitingFor))
                         {
+                            printf("Already in frame table\n");
                             //Check if address is already in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
@@ -207,25 +221,27 @@ int main(int argc, char *argv[])
                         }
                         else
                         {
+                            printf("Not in frame table\n");
                             //Not in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
                             sprintf(stringBuf, "Address %d is not in a frame, pagefault!\n", shm_ptr->procs[i].waitingFor);
                             writeToLog(stringBuf);
                             page_faults++;
-                            frameLoc == shm_ptr->nextEntry;
+                            frameLoc = shm_ptr->nextEntry;
                             //Find a blank frame
-                            while (1)
-                            {
-                                if (shm_ptr->frames[frameLoc].address == 0)
-                                {
-                                    break;
-                                }
-                                else
-                                {
-                                    frameLoc = (frameLoc + 1) % MAX_MEM;
-                                }
-                            }
+                            // while (1)
+                            // {
+                            //     if (shm_ptr->frames[frameLoc].address == 0)
+                            //     {
+                            //         break;
+                            //     }
+                            //     else
+                            //     {
+                            //         frameLoc = (frameLoc + 1) % MAX_MEM;
+                            //     }
+                            // }
+                            frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
                             shm_ptr->frames[frameLoc].dirtyBit = 0;
                             shm_ptr->frames[frameLoc].proc_num = i;
@@ -250,10 +266,12 @@ int main(int argc, char *argv[])
                     //Find the next frame that is replacible, ie dirtyBity = 0
                     if (shm_ptr->procs[i].type == READ)
                     {
+                        printf("Read request looking for frame to replace\n");
                         sprintf(stringBuf, "P%d requesting read of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
                         writeToLog(stringBuf);
                         if (inFrameTable(shm_ptr->procs[i].waitingFor))
                         {
+                            printf("Already in frame table\n");
                             //Already in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
@@ -264,6 +282,7 @@ int main(int argc, char *argv[])
                         }
                         else
                         {
+                            printf("Not in frame table\n");
                             //No in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
@@ -272,6 +291,7 @@ int main(int argc, char *argv[])
                             page_faults++;
                             if ((frameLoc = nextSwap()) != -1)
                             {
+                                printf("Replacing a frame\n");
                                 //There is a frame that can be replaced
                                 shm_ptr->nsecs += 14000000;
                                 nsecsToSecs();
@@ -295,12 +315,14 @@ int main(int argc, char *argv[])
                     }
                     else
                     {
+                        printf("Write request looking for frame to replace\n");
                         //Write
                         sprintf(stringBuf, "P%d requesting write of address %d at time %d : %d\n", i, shm_ptr->procs[i].waitingFor, shm_ptr->secs, shm_ptr->nsecs);
                         writeToLog(stringBuf);
 
                         if (inFrameTable(shm_ptr->procs[i].waitingFor))
                         {
+                            printf("Already in frame table\n");
                             //Check if address is already in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
@@ -311,6 +333,7 @@ int main(int argc, char *argv[])
                         }
                         else
                         {
+                            printf("Not in frame table\n");
                             //Not in frame table
                             shm_ptr->nsecs += 14000000;
                             nsecsToSecs();
@@ -319,6 +342,7 @@ int main(int argc, char *argv[])
                             page_faults++;
                             if ((frameLoc = nextSwap()) != -1)
                             {
+                                printf("Replacing a frame\n");
                                 //There is a frame that can be replaced
                                 shm_ptr->nsecs += 14000000;
                                 nsecsToSecs();
@@ -349,6 +373,7 @@ int main(int argc, char *argv[])
         }
         //Update clock
         sem_wait(CLOCK_SEM);
+        printf("Updating logical clock\n");
         nano_time_pass = 1 + (rand() % 100000000);
         shm_ptr->nsecs += nano_time_pass;
         nsecsToSecs();
@@ -390,6 +415,29 @@ void cleanup()
     shmctl(shm_id, IPC_RMID, NULL);
     semctl(sem_id, 0, IPC_RMID, NULL);
     exit(0);
+}
+
+int getNextFrameLocation(unsigned int location)
+{
+    printf("getNextFrameLocation called\n");
+    int storedOffLocation = location;
+
+    while(1)
+    {
+        if (shm_ptr->frames[location].address == 0)
+        {
+            break;
+        }
+        else
+        {
+            location = (location + 1) % MAX_MEM;
+        }
+    }
+    //Incase pageCount doesn't increment properly, prevents an infinite loop where it can't find an open frame
+    if (location == storedOffLocation && shm_ptr->frames[location].address != 0)
+    {
+        cleanup();
+    } 
 }
 
 int set_sem()
@@ -505,6 +553,7 @@ void forkClockFix()
 
 bool timePassed()
 {
+    printf("timePassed called, seeing if it is time to fork\n");
     //Check if enough time has passed for another fork
     if(sec_until_fork == shm_ptr->secs)
     {
@@ -552,6 +601,7 @@ void forkNewProc()
     {
         if(shm_ptr->running_pids[index] == 0)
         {
+            printf("Forking a new process\n");
             sem_signal(PROC_CT_SEM);
             numOfForks++;
             pid = fork();
@@ -610,19 +660,39 @@ void print_stats()
 
 void print_mem()
 {
+    printf("print_mem called\n");
     sprintf(stringBuf, "Current memory layout at time %d : %d is:\n", shm_ptr->secs, shm_ptr->nsecs);
     writeToLog(stringBuf);
-    writeToLog("    Occupied    DirtyBit\n");
+    writeToLog("         Occupied    DirtyBit\n");
     for (int i = 0; i < MAX_MEM; i++)
     {
-        sprintf(stringBuf, "Frame %d: %d    %d\n", i, shm_ptr->frames[i].address, shm_ptr->frames[i].dirtyBit);
+        //sprintf(stringBuf, "Frame %d: %d    %d\n", i, shm_ptr->frames[i].address, shm_ptr->frames[i].dirtyBit);
+        sprintf(stringBuf, "Frame %d: ", i);
         writeToLog(stringBuf);
+        if (shm_ptr->frames[i].address == 0)
+        {
+            writeToLog("No          ");
+        }
+        else
+        {
+            writeToLog("Yes         ");
+        }
+
+        if (shm_ptr->frames[i].dirtyBit == true)
+        {
+            writeToLog("1\n");
+        }
+        else
+        {
+            writeToLog("0\n");
+        }
     }
     writeToLog("\n");
 }
 
 int nextSwap()
 {
+    printf("NextSwap called\n");
     int tempVar;
     tempVar = shm_ptr->lookingFor;
 
@@ -641,6 +711,7 @@ int nextSwap()
 
 bool inFrameTable(int frame)
 {
+    printf("inFrameTable called\n");
     //See if a frame is in a frametable
     for (int i = 0; i < MAX_MEM; i++)
     {
@@ -660,6 +731,7 @@ bool inFrameTable(int frame)
 
 void findPage()
 {
+    printf("findPage called\n");
     int tempVar;
     usedFrames = 0;
     tempVar = shm_ptr->lookingFor;
@@ -673,6 +745,7 @@ void findPage()
 
 void check_died()
 {
+    printf("check_died called\n");
     for (int a = 0; a < MAX_PROC; a++)
     {
         if (shm_ptr->procs[a].died == true)
@@ -695,5 +768,26 @@ void check_died()
             }
             shm_ptr->running_pids[a] = 0;
         }
+    }
+}
+
+void checkForDeadlock()
+{
+    printf("checkForDeadlock called\n");
+    //Make sure all the processes aren't waiting
+    unsigned int waitingCount = 0;
+    for (int a = 0; a < MAX_PROC; a++)
+    {
+        if (semctl(sem_id, a, GETVAL, 0) == 0)
+        {
+            waitingCount++;
+        }
+    }
+
+    //If the waitingCount >= 18, then all the processes are waiting and a deadlock has occurred
+    if (waitingCount >= 18)
+    {
+        printf("18 waiting processes, calling cleanup\n");
+        cleanup();
     }
 }

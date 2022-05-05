@@ -81,14 +81,16 @@ int main(int argc, char *argv[])
         sem_wait(cur_index);
 
         //Wait for request to be completed
-        while (1)
-        {
-            temp = semctl(sem_id, cur_index, GETVAL, 0);
-            if (temp == 1)
-            {
-                break;
-            }
-        }
+        // while (1)
+        // {
+        //     temp = semctl(sem_id, cur_index, GETVAL, 0);
+        //     if (temp == 1)
+        //     {
+        //         break;
+        //     }
+        // }
+        
+        while (semctl(sem_id, cur_index, GETVAL, 0) != 1);
 
         //Chance to die
         temp = rand() % 150;

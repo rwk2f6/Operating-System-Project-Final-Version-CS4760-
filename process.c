@@ -61,12 +61,12 @@ int main(int argc, char *argv[])
             break;
         }
 
-        req_address = 200000 + (rand() % 53000);
+        req_address = ((rand() % 32) * 1024) + (rand() % 1023);
 
         int temp = rand() % 100;
 
         //Write is less frequent than READ
-        if (temp == 3)
+        if (temp <= 25)
         {
             shm_ptr->procs[cur_index].type = WRITE;
         }

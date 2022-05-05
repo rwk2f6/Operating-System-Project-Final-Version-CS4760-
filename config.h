@@ -30,16 +30,16 @@
 //Structure for frame
 typedef struct {
 
-    int address;
-    char dirtyBit;
-    int proc_num;
+   int address;
+   bool dirtyBit;
+   unsigned int proc_num;
 
 } frame;
 
 typedef struct {
 
-   int address;
-   int frame_num;
+   unsigned int address;
+   unsigned int frame_num;
 
 } page;
 
@@ -49,8 +49,8 @@ typedef struct {
    int type;
    bool died;
    page pageTable[MAX_FRAMES];
-   int pageIndex;
-   int pageCount;
+   unsigned int pageIndex;
+   unsigned int pageCount;
 
 } proc_stats;
 

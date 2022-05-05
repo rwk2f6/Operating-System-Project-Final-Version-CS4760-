@@ -43,6 +43,8 @@ int main(int argc, char *argv[])
     //Find the index of the process in the process table using PID
     cur_index = findIndex(cur_pid);
 
+    printf("P%d has been forked\n", cur_index);
+
     //Update timer before process starts
     sem_wait(CLOCK_SEM);
 
@@ -68,10 +70,12 @@ int main(int argc, char *argv[])
         //Write is less frequent than READ
         if (temp <= 25)
         {
+            printf("P%d is requesting a write\n", cur_index);
             shm_ptr->procs[cur_index].type = WRITE;
         }
         else
         {
+            printf("P%d is requesting a read\n", cur_index);
             shm_ptr->procs[cur_index].type = READ;
         }
 
@@ -89,7 +93,7 @@ int main(int argc, char *argv[])
         //         break;
         //     }
         // }
-        
+
         while (semctl(sem_id, cur_index, GETVAL, 0) != 1);
 
         //Chance to die

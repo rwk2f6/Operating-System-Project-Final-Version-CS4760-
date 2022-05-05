@@ -30,7 +30,7 @@
 //Structure for frame
 typedef struct {
 
-   int address;
+   unsigned int address;
    bool dirtyBit;
    unsigned int proc_num;
 

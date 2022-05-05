@@ -185,7 +185,7 @@ int main(int argc, char *argv[])
                             // }
                             frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
-                            printf("SETTING FRAME ADDRESS TO %d\n", shm_ptr->procs[i].waitingFor);
+                            printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                             shm_ptr->frames[frameLoc].dirtyBit = 0;
                             shm_ptr->frames[frameLoc].proc_num = i;
@@ -246,7 +246,7 @@ int main(int argc, char *argv[])
                             //Insert
                             shm_ptr->frames[frameLoc].dirtyBit = 0;
                             shm_ptr->frames[frameLoc].proc_num = i;
-                            printf("SETTING FRAME ADDRESS TO %d\n", shm_ptr->procs[i].waitingFor);
+                            printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                             shm_ptr->nextEntry = (frameLoc + 1) % MAX_MEM;
                             sprintf(stringBuf, "Address %d in frame %d, writing data to frame at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, shm_ptr->secs, shm_ptr->nsecs);
@@ -299,7 +299,7 @@ int main(int argc, char *argv[])
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
                                 shm_ptr->frames[frameLoc].dirtyBit = 0;
-                                printf("SETTING FRAME ADDRESS TO %d\n", shm_ptr->procs[i].waitingFor);
+                                printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
                                 writeToLog(stringBuf);
@@ -351,7 +351,7 @@ int main(int argc, char *argv[])
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
                                 shm_ptr->frames[frameLoc].dirtyBit = 0;
-                                printf("SETTING FRAME ADDRESS TO %d\n", shm_ptr->procs[i].waitingFor);
+                                printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
                                 writeToLog(stringBuf);
@@ -435,13 +435,16 @@ int getNextFrameLocation(unsigned int location)
         else
         {
             location = (location + 1) % MAX_MEM;
+            return location;
         }
     }
     //Incase pageCount doesn't increment properly, prevents an infinite loop where it can't find an open frame
     if (location == storedOffLocation && shm_ptr->frames[location].address != 0)
     {
         cleanup();
-    } 
+    }
+
+    return location; 
 }
 
 int set_sem()

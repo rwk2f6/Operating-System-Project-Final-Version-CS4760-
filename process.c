@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
         //See if process has used all of its memory requests
         if (shm_ptr->procs[cur_index].pageCount == 32)
         {
-            printf("All available memory used, dying\n");
+            //printf("All available memory used, dying\n");
             shm_ptr->procs[cur_index].died = true;
             break;
         }
@@ -65,14 +65,14 @@ int main(int argc, char *argv[])
         int temp = rand() % 100;
 
         //Write is less frequent than READ
-        if (temp <= 40)
+        if (temp <= 25)
         {
-            printf("P%d is requesting a write\n", cur_index);
+            //printf("P%d is requesting a write\n", cur_index);
             shm_ptr->procs[cur_index].type = WRITE;
         }
         else
         {
-            printf("P%d is requesting a read\n", cur_index);
+            //printf("P%d is requesting a read\n", cur_index);
             shm_ptr->procs[cur_index].type = READ;
         }
 

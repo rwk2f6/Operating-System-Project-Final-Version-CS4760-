@@ -18,4 +18,6 @@ Delete oss and process Executables and logfile: make clean
 
 How to Invoke: ./oss
 
-Issues:
+GitHub: https://github.com/rwk2f6/cs4760_p6
+
+Issues: My project isn't able to fill the page table, and the print_mem function seems to have a bug where it doesn't properly display if a frame is filled or not. If you look at my debug lines, printfs, it will print the frame location and address it is trying to set right before actually setting them. It shows up fine in the printf but only sometimes do the frames actually get set.

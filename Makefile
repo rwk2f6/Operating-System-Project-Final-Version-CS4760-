@@ -9,4 +9,4 @@ uprocess: config.h process.c
 	$(CC) -o $@ $^ $(CFLAGS)
 
 clean:
-	rm oss process logfile
+	rm oss process logfile.txt

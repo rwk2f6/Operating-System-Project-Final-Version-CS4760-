@@ -14,9 +14,6 @@ bool checkSysClock();
 
 int main(int argc, char *argv[])
 {
-    //Initialize local variables
-    int index, numOfUsedRes;
-
     cur_pid = getpid();
     //Seed rand based off of pid so each process is different
     srand(cur_pid * 12);

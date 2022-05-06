@@ -62,7 +62,6 @@ typedef struct {
    frame frames[MAX_MEM];
 
    int lookingFor;
-   int nextEntry;
 
    unsigned int secs;
    unsigned int nsecs;

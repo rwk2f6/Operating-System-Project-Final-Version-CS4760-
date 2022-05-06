@@ -12,6 +12,7 @@ int mem_access = 0;
 int page_faults = 0;
 int prevPrint = 0;
 int log_line_num = 0;
+unsigned int nextEntry = 0;
 FILE* logfile_ptr = NULL;
 shm_container* shm_ptr = NULL;
 
@@ -63,7 +64,7 @@ int main(int argc, char *argv[])
     sigaction(SIGCHLD, &siga, NULL);
 
     //Open logfile
-    logfile_ptr = fopen("logfile", "a");
+    logfile_ptr = fopen("logfile.txt", "a");
     writeToLog("Oss.c Logfile:\n\n");
     writeToLog("Logfile created successfully!\n");
 
@@ -170,26 +171,15 @@ int main(int argc, char *argv[])
                             sprintf(stringBuf, "Address %d is not in frame table, pagefault!\n", shm_ptr->procs[i].waitingFor);
                             writeToLog(stringBuf);
                             page_faults++;
-                            frameLoc = shm_ptr->nextEntry;
+                            frameLoc = nextEntry;
                             //Find next empty frame, FIFO
-                            // while (1)
-                            // {
-                            //     if (shm_ptr->frames[frameLoc].address == 0)
-                            //     {
-                            //         break;
-                            //     }
-                            //     else
-                            //     {
-                            //         frameLoc = (frameLoc + 1) % MAX_MEM;
-                            //     }
-                            // }
                             frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
                             printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                             shm_ptr->frames[frameLoc].dirtyBit = 0;
                             shm_ptr->frames[frameLoc].proc_num = i;
-                            shm_ptr->nextEntry = (frameLoc + 1) % MAX_MEM;
+                            nextEntry = (frameLoc + 1) % MAX_MEM;
                             sprintf(stringBuf, "Address %d in frame %d, giving data to P%d at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, i, shm_ptr->secs, shm_ptr->nsecs);
                             writeToLog(stringBuf);
                             shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].address = shm_ptr->procs[i].waitingFor;
@@ -229,26 +219,15 @@ int main(int argc, char *argv[])
                             sprintf(stringBuf, "Address %d is not in a frame, pagefault!\n", shm_ptr->procs[i].waitingFor);
                             writeToLog(stringBuf);
                             page_faults++;
-                            frameLoc = shm_ptr->nextEntry;
+                            frameLoc = nextEntry;
                             //Find a blank frame
-                            // while (1)
-                            // {
-                            //     if (shm_ptr->frames[frameLoc].address == 0)
-                            //     {
-                            //         break;
-                            //     }
-                            //     else
-                            //     {
-                            //         frameLoc = (frameLoc + 1) % MAX_MEM;
-                            //     }
-                            // }
                             frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
-                            shm_ptr->frames[frameLoc].dirtyBit = 0;
+                            shm_ptr->frames[frameLoc].dirtyBit = 1;
                             shm_ptr->frames[frameLoc].proc_num = i;
                             printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
-                            shm_ptr->nextEntry = (frameLoc + 1) % MAX_MEM;
+                            nextEntry = (frameLoc + 1) % MAX_MEM;
                             sprintf(stringBuf, "Address %d in frame %d, writing data to frame at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, shm_ptr->secs, shm_ptr->nsecs);
                             writeToLog(stringBuf);
                             mem_access++;
@@ -298,7 +277,7 @@ int main(int argc, char *argv[])
                                 shm_ptr->nsecs += 14000000;
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
-                                shm_ptr->frames[frameLoc].dirtyBit = 0;
+                                shm_ptr->frames[frameLoc].dirtyBit = 1;
                                 printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
@@ -350,7 +329,7 @@ int main(int argc, char *argv[])
                                 shm_ptr->nsecs += 14000000;
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
-                                shm_ptr->frames[frameLoc].dirtyBit = 0;
+                                shm_ptr->frames[frameLoc].dirtyBit = 1;
                                 printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
@@ -511,7 +490,6 @@ void init_shm()
     //Initialize clock and frame table indexes
     shm_ptr->nsecs = 0;
     shm_ptr->secs = 0;
-    shm_ptr->nextEntry = 0;
     shm_ptr->lookingFor = 0;
 }
 
@@ -595,7 +573,7 @@ void nsecsToSecs()
 
 void forkNewProc()
 {
-    //Keep track of total processes and terminate if it reaches 40
+    //Keep track of total processes and terminate if it reaches 100
     if (numOfForks >= 100)
     {
         printf("oss.c: Terminating as 100 total children have been forked\n");

@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
                             //Find next empty frame, FIFO
                             frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
-                            printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
+                            printf("SETTING FRAME ADDRESS TO %d Read Req: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                             shm_ptr->frames[frameLoc].dirtyBit = 0;
                             shm_ptr->frames[frameLoc].proc_num = i;
@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
                             //Insert
                             shm_ptr->frames[frameLoc].dirtyBit = 1;
                             shm_ptr->frames[frameLoc].proc_num = i;
-                            printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
+                            printf("SETTING FRAME ADDRESS TO %d Write Req: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                             nextEntry = (frameLoc + 1) % MAX_MEM;
                             sprintf(stringBuf, "Address %d in frame %d, writing data to frame at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, shm_ptr->secs, shm_ptr->nsecs);
@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
                                 shm_ptr->frames[frameLoc].dirtyBit = 1;
-                                printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
+                                printf("SETTING FRAME ADDRESS TO %d Read Req Swap: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
                                 writeToLog(stringBuf);
@@ -330,7 +330,7 @@ int main(int argc, char *argv[])
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
                                 shm_ptr->frames[frameLoc].dirtyBit = 1;
-                                printf("SETTING FRAME ADDRESS TO %d: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
+                                printf("SETTING FRAME ADDRESS TO %d Write Req Swap: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
                                 writeToLog(stringBuf);

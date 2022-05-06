@@ -45,7 +45,7 @@ typedef struct {
 
 typedef struct {
 
-   int waitingFor;
+   unsigned int waitingFor;
    int type;
    bool died;
    page pageTable[MAX_FRAMES];
@@ -61,7 +61,7 @@ typedef struct {
    proc_stats procs[MAX_PROC];
    frame frames[MAX_MEM];
 
-   int lookingFor;
+   unsigned int lookingFor;
 
    unsigned int secs;
    unsigned int nsecs;

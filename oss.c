@@ -12,7 +12,6 @@ int mem_access = 0;
 int page_faults = 0;
 int prevPrint = 0;
 int log_line_num = 0;
-unsigned int nextEntry = 0;
 FILE* logfile_ptr = NULL;
 shm_container* shm_ptr = NULL;
 
@@ -49,7 +48,7 @@ int main(int argc, char *argv[])
 {
     srand(time(NULL));
 
-    unsigned int frameLoc;
+    unsigned int frameLoc = 0;
 
     //Signal handlers for timer, CTRL-C, and random termination
     signal(SIGALRM, alarm_handler); //Catches alarm
@@ -171,15 +170,11 @@ int main(int argc, char *argv[])
                             sprintf(stringBuf, "Address %d is not in frame table, pagefault!\n", shm_ptr->procs[i].waitingFor);
                             writeToLog(stringBuf);
                             page_faults++;
-                            frameLoc = nextEntry;
-                            //Find next empty frame, FIFO
-                            frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
                             printf("SETTING FRAME ADDRESS TO %d Read Req: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                             shm_ptr->frames[frameLoc].dirtyBit = 0;
                             shm_ptr->frames[frameLoc].proc_num = i;
-                            nextEntry = (frameLoc + 1) % MAX_MEM;
                             sprintf(stringBuf, "Address %d in frame %d, giving data to P%d at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, i, shm_ptr->secs, shm_ptr->nsecs);
                             writeToLog(stringBuf);
                             shm_ptr->procs[i].pageTable[shm_ptr->procs[i].pageIndex].address = shm_ptr->procs[i].waitingFor;
@@ -189,6 +184,9 @@ int main(int argc, char *argv[])
                             shm_ptr->nsecs += 14000000;
                             usedFrames++;
                             nsecsToSecs();
+                            //Find next empty frame, FIFO
+                            //frameLoc = getNextFrameLocation(frameLoc);
+                            frameLoc = (frameLoc + 1) % MAX_MEM;
                             sem_signal(i);
                         }
                     }
@@ -219,15 +217,15 @@ int main(int argc, char *argv[])
                             sprintf(stringBuf, "Address %d is not in a frame, pagefault!\n", shm_ptr->procs[i].waitingFor);
                             writeToLog(stringBuf);
                             page_faults++;
-                            frameLoc = nextEntry;
-                            //Find a blank frame
-                            frameLoc = getNextFrameLocation(frameLoc);
                             //Insert
                             shm_ptr->frames[frameLoc].dirtyBit = 1;
+                            sprintf(stringBuf, "Dirty bit of frame %d set at time %d : %d, adding additional time to the clock", frame_num, shm_ptr->secs, shm_ptr->nsecs);
+                            writeToLog(stringBuf);
+                            shm_ptr->nsecs += 107;
+                            nsecsToSecs();
                             shm_ptr->frames[frameLoc].proc_num = i;
                             printf("SETTING FRAME ADDRESS TO %d Write Req: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                             shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
-                            nextEntry = (frameLoc + 1) % MAX_MEM;
                             sprintf(stringBuf, "Address %d in frame %d, writing data to frame at time %d : %d\n", shm_ptr->procs[i].waitingFor, frameLoc, shm_ptr->secs, shm_ptr->nsecs);
                             writeToLog(stringBuf);
                             mem_access++;
@@ -238,6 +236,9 @@ int main(int argc, char *argv[])
                             shm_ptr->nsecs += 14000000;
                             usedFrames++;
                             nsecsToSecs();
+                            //Find next empty frame, FIFO
+                            //frameLoc = getNextFrameLocation(frameLoc);
+                            frameLoc = (frameLoc + 1) % MAX_MEM;
                             sem_signal(i);
                         }
                     }
@@ -278,6 +279,10 @@ int main(int argc, char *argv[])
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
                                 shm_ptr->frames[frameLoc].dirtyBit = 1;
+                                sprintf(stringBuf, "Dirty bit of frame %d set at time %d : %d, adding additional time to the clock", frame_num, shm_ptr->secs, shm_ptr->nsecs);
+                                writeToLog(stringBuf);
+                                shm_ptr->nsecs += 107;
+                                nsecsToSecs();
                                 printf("SETTING FRAME ADDRESS TO %d Read Req Swap: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
@@ -330,6 +335,10 @@ int main(int argc, char *argv[])
                                 nsecsToSecs();
                                 shm_ptr->frames[frameLoc].proc_num = i;
                                 shm_ptr->frames[frameLoc].dirtyBit = 1;
+                                sprintf(stringBuf, "Dirty bit of frame %d set at time %d : %d, adding additional time to the clock", frame_num, shm_ptr->secs, shm_ptr->nsecs);
+                                writeToLog(stringBuf);
+                                shm_ptr->nsecs += 107;
+                                nsecsToSecs();
                                 printf("SETTING FRAME ADDRESS TO %d Write Req Swap: Frame Location: %d P%d\n", shm_ptr->procs[i].waitingFor, frameLoc, i);
                                 shm_ptr->frames[frameLoc].address = shm_ptr->procs[i].waitingFor;
                                 sprintf(stringBuf, "Clearing frame %d and swapping in P%d at address %d\n", frameLoc, i, shm_ptr->procs[i].waitingFor);
@@ -348,10 +357,6 @@ int main(int argc, char *argv[])
                         }
                     }
                 }
-            }
-            else
-            {
-                //Do nothing, wait for a request to be put in
             }
         }
         //Update clock
@@ -694,20 +699,14 @@ int nextSwap()
     return -1;
 }
 
-bool inFrameTable(int frame)
+bool inFrameTable(int address)
 {
     printf("inFrameTable called\n");
     //See if a frame is in a frametable
     for (int i = 0; i < MAX_MEM; i++)
     {
-        if (shm_ptr->frames[i].address == frame)
+        if (shm_ptr->frames[i].address == address)
         {
-            frame_num = i;
-            shm_ptr->frames[frame_num].dirtyBit = 1;
-            sprintf(stringBuf, "Dirty bit of frame %d set at time %d : %d, adding additional time to the clock", frame_num, shm_ptr->secs, shm_ptr->nsecs);
-            writeToLog(stringBuf);
-            shm_ptr->nsecs += 107;
-            nsecsToSecs();
             return true;
         }
     }
